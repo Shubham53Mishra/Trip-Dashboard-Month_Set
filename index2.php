@@ -242,8 +242,8 @@ if (isset($_GET['view_comments'])) {
                     <tr>
                         <td><?= htmlspecialchars($row["trans_id"]) ?></td>
                         <td class="drop-date"><?= htmlspecialchars($row["drop_date"]) ?></td>
-                        <td class="pickup-date"><?= htmlspecialchars($row["pickup_date"]) ?></td> <!-- Added class for Pickup Date cell -->
-                        <td class="customer-name"><?= htmlspecialchars($row["customer_name"]) ?></td> <!-- Added class for Customer Name cell -->
+                        <td class="pickup-date"><?= htmlspecialchars($row["pickup_date"]) ?></td>  
+                        <td class="customer-name"><?= htmlspecialchars($row["customer_name"]) ?></td> 
                         <td><?= htmlspecialchars($row["customer_mobile"]) ?></td>
                         <td><?= htmlspecialchars($row["bikes_id"]) ?></td>
                         <td><?= htmlspecialchars($row["rent"]) ?></td>
