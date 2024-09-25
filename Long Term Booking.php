@@ -19,7 +19,7 @@ echo "Logged in as: " . htmlspecialchars($logged_in_vendor_email_id);
 $servername = "localhost";
 $username = "root";
 $password = "";
-$dbname = "trip_db"; // Change this to your database name
+$dbname = "trip_db"; // 
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 if ($conn->connect_error) {
