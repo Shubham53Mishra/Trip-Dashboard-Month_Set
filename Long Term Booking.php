@@ -1,4 +1,4 @@
- <?php
+<?php
 
 session_start();
 ob_start();
@@ -13,7 +13,7 @@ if (!isset($_SESSION['email'])) {
 $logged_in_vendor_email_id = $_SESSION['email'];
 
 // Debugging: Check if the session variable is set
-echo "Logged in as: " . htmlspecialchars($logged_in_vendor_email_id);
+//echo "Logged in as: " . htmlspecialchars($logged_in_vendor_email_id);
 
 // Database connection
 $servername = "localhost";
@@ -82,6 +82,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 }
 
 // Fetch comments for viewing
+   // Fetch comments for viewing
 if (isset($_GET['view_comments'])) {
     $trans_id = $_GET['view_comments'];
     $comment_sql = "SELECT trans_id, username, comment, time FROM comment WHERE trans_id = ?";
@@ -94,7 +95,23 @@ if (isset($_GET['view_comments'])) {
     while ($row = $comment_result->fetch_assoc()) {
         $comments[] = $row;
     }
-    echo json_encode($comments);
+
+    // Create a HTML table to display comments
+    $comment_table = '<table class="table table-bordered">';
+    $comment_table .= '<thead><tr><th>Trans ID</th><th>Username</th><th>Comment</th><th>Time</th></tr></thead>';
+    $comment_table .= '<tbody>';
+    foreach ($comments as $comment) {
+        $comment_table .= '<tr>';
+        $comment_table .= '<td>' . htmlspecialchars($comment["trans_id"]) . '</td>';
+        $comment_table .= '<td>' . htmlspecialchars($comment["username"]) . '</td>';
+        $comment_table .= '<td>' . htmlspecialchars($comment["comment"]) . '</td>';
+        $comment_table .= '<td>' . htmlspecialchars($comment["time"]) . '</td>';
+        $comment_table .= '</tr>';
+    }
+    $comment_table .= '</tbody>';
+    $comment_table .= '</table>';
+
+    echo $comment_table;
     exit;
 }
 ?>
@@ -306,31 +323,23 @@ if (isset($_GET['view_comments'])) {
         });
 
         // Handle View Comment Modal
-        $('#viewCommentModal').on('show.bs.modal', function(event) {
-            var button = $(event.relatedTarget);
-            var transId = button.data('trans-id');
-            var modal = $(this);
-            var commentList = document.getElementById('commentList');
+      // Handle View Comment Modal
+$('#viewCommentModal').on('show.bs.modal', function (event) {
+    var button = $(event.relatedTarget);
+    var transId = button.data('trans-id');
+    var modal = $(this);
+    var commentList = document.getElementById('commentList');
 
-            // Clear the existing comments
-            commentList.innerHTML = '';
+    // Clear the existing comments
+    commentList.innerHTML = '';
 
-            // Fetch comments via AJAX
-            fetch(`?view_comments=${transId}`)
-                .then(response => response.json())
-                .then(data => {
-                    data.forEach(comment => {
-                        var row = document.createElement('tr');
-                        row.innerHTML = `
-                            <td>${comment.trans_id}</td>
-                            <td>${comment.username}</td>
-                            <td>${comment.comment}</td>
-                            <td>${comment.time}</td>
-                        `;
-                        commentList.appendChild(row);
-                    });
-                });
+    // Fetch comments via AJAX
+    fetch(`?view_comments=${transId}`)
+        .then(response => response.text())
+        .then(data => {
+            commentList.innerHTML = data;
         });
+});
 
         function sendWhatsApp(customerMobile) {
             // Log the customer mobile to check if it's being passed correctly
