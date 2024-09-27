@@ -186,6 +186,22 @@ if (isset($_GET['view_comments'])) {
         .customer-name {
             width: 190px;
         }
+
+        .highlight {
+            background-color: lightgreen;
+        }
+
+        .done {
+            background-color: lightblue;
+        }
+
+        .overdue {
+            background-color: lightcoral;
+        }
+
+        .warning {
+            background-color: yellow;
+        }
     </style>
 </head>
 
@@ -277,8 +293,14 @@ if (isset($_GET['view_comments'])) {
                     <th>Add Comment</th>
                     <th>WhatsApp</th>
                 </tr>
-                <?php while ($row = $result->fetch_assoc()): ?>
-                    <tr>
+                <?php while ($row = $result->fetch_assoc()): 
+                    $drop_date = new DateTime($row['drop_date']);
+                    $current_date = new DateTime();
+                    $interval = $current_date->diff($drop_date)->days;
+                    $is_overdue = $interval > 3 && $row['amount_paid'] != $row['rent'];
+                    $is_warning = $interval >= 0 && $interval <= 3 && $row['amount_paid'] != $row['rent'];
+                ?>
+                    <tr class="<?= $row['amount_paid'] == $row['rent'] ? 'highlight' : '' ?> <?= $row['drop_date'] == 'done' ? 'done' : '' ?> <?= $is_overdue ? 'overdue' : '' ?> <?= $is_warning ? 'warning' : '' ?>">
                         <td><?= htmlspecialchars($row["trans_id"]) ?></td>
                         <td class="drop-date"><?= htmlspecialchars($row["drop_date"]) ?></td>
                         <td class="pickup-date"><?= htmlspecialchars($row["pickup_date"]) ?></td>  
