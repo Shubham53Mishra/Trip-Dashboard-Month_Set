@@ -201,116 +201,6 @@ if (isset($_GET['view_comments'])) {
 
 
 
-
-
-
-
-// $mysqli = new mysqli("localhost", "username", "password", "database");
-
-// Check connection
-// if ($mysqli->connect_error) {
-//     die("Connection failed: " . $mysqli->connect_error);
-// }
-
-// Define vendor email id and date range
-$vendor_email_id = 'vendor@example.com';
-$start_date = '2024-10-01';
-$end_date = '2024-10-31';
-
-
-$status = '';
-
-// Extended & Paid
-$sql_extended_paid = "SELECT trip.trans_id, trip.drop_date, trip.pickup_date, trip.customer_name, trip.customer_mobile, trip.bikes_id, trip.rent, trip.amount_paid, trip.vendor_email_id, latest_comments.comment
-    FROM trip
-    LEFT JOIN (
-        SELECT c1.trans_id, c1.comment
-        FROM comment c1
-        INNER JOIN (
-            SELECT trans_id, MAX(time) as latest_time
-            FROM comment
-            GROUP BY trans_id
-        ) c2 ON c1.trans_id = c2.trans_id AND c1.time = c2.latest_time
-    ) latest_comments ON trip.trans_id = latest_comments.trans_id
-    WHERE trip.drop_date BETWEEN ? AND ?
-    AND trip.admin_status != 'cancelled'
-    AND trip.trans_id LIKE '%e%'
-    AND trip.amount_paid >= trip.rent
-    AND trip.vendor_email_id = ?
-    ORDER BY trip.drop_date ASC";
-    
-$stmt = $mysqli->prepare($sql_extended_paid);
-$stmt->bind_param('sss', $start_date, $end_date, $vendor_email_id);
-$stmt->execute();
-$result_extended_paid = $stmt->get_result();
-
-if ($result_extended_paid->num_rows > 0) {
-    $status = "Extended & Paid";
-} else {
-    // Extended but Not Paid
-    $sql_extended_not_paid = "SELECT trip.trans_id, trip.drop_date, trip.pickup_date, trip.customer_name, trip.customer_mobile, trip.bikes_id, trip.rent, trip.amount_paid, trip.vendor_email_id, latest_comments.comment
-        FROM trip
-        LEFT JOIN (
-            SELECT c1.trans_id, c1.comment
-            FROM comment c1
-            INNER JOIN (
-                SELECT trans_id, MAX(time) as latest_time
-                FROM comment
-                GROUP BY trans_id
-            ) c2 ON c1.trans_id = c2.trans_id AND c1.time = c2.latest_time
-        ) latest_comments ON trip.trans_id = latest_comments.trans_id
-        WHERE trip.drop_date BETWEEN ? AND ?
-        AND trip.admin_status != 'cancelled'
-        AND trip.trans_id LIKE '%e%'
-        AND trip.amount_paid < trip.rent
-        AND trip.vendor_email_id = ?
-        ORDER BY trip.drop_date ASC";
-    
-    $stmt = $mysqli->prepare($sql_extended_not_paid);
-    $stmt->bind_param('sss', $start_date, $end_date, $vendor_email_id);
-    $stmt->execute();
-    $result_extended_not_paid = $stmt->get_result();
-
-    if ($result_extended_not_paid->num_rows > 0) {
-        $status = "Extended but Not Paid";
-    } else {
-        // Drop Done
-        $sql_drop_done = "SELECT trans_id, drop_date, customer_name, bikes_id, rent, amount_paid
-            FROM trip
-            WHERE drop_date < CURRENT_DATE()
-            AND trip.vendor_email_id = ? 
-            AND drop_status = 'done'";
-        
-        $stmt = $mysqli->prepare($sql_drop_done);
-        $stmt->bind_param('s', $vendor_email_id);
-        $stmt->execute();
-        $result_drop_done = $stmt->get_result();
-
-        if ($result_drop_done->num_rows > 0) {
-            $status = "Drop Done";
-        } else {
-            // Expired but not extended & drop not done
-            $sql_expired_not_extended = "SELECT trans_id, drop_date, customer_name, bikes_id, rent, amount_paid
-                FROM trip
-                WHERE drop_date < CURRENT_DATE()
-                AND trip.vendor_email_id = ?
-                AND drop_status != 'done'
-                AND NOT EXISTS (SELECT 1 FROM trip t WHERE t.pickup_date > trip.drop_date AND t.vendor_email_id = ?)";
-            
-            $stmt = $mysqli->prepare($sql_expired_not_extended);
-            $stmt->bind_param('ss', $vendor_email_id, $vendor_email_id);
-            $stmt->execute();
-            $result_expired_not_extended = $stmt->get_result();
-
-            if ($result_expired_not_extended->num_rows > 0) {
-                $status = "Expired but Not Extended & Drop Not Done";
-            }
-        }
-    }
-}
-
-
-
 ?>
 
 <!DOCTYPE html>
@@ -528,7 +418,50 @@ if ($result_extended_paid->num_rows > 0) {
             <?php
             $sno = 1;
             while ($row = $result->fetch_assoc()):
+                $drop_date_current_month = $row["drop_date"]; // Assume this is the drop date in the current month
+                $next_booking_date = '2024-11-01'; // Date of next booking for current customers
+                $trans_id = 'e12345'; // Transaction ID (example format: eXXXX)
+                $paid_rent = $row["amount_paid"]; // Rent paid
+                $rent = $row["rent"]; // Rent due
+                $current_date = date('Y-m-d'); // Current date
+
+                $status = ""; // Variable to store the status
+
+                // Condition 1: Extended & Paid
+                if (
+                    $drop_date_current_month == $current_date &&
+                    $next_booking_date > $drop_date_current_month &&
+                    strpos($trans_id, 'e') !== false &&
+                    $paid_rent >= $rent
+                ) {
+                    $status = "Extended & paid";
+                }
+                // Condition 2: Extended but not Paid
+                elseif (
+                    $drop_date_current_month == $current_date &&
+                    $next_booking_date > $drop_date_current_month &&
+                    strpos($trans_id, 'e') !== false &&
+                    $paid_rent < $rent
+                ) {
+                    $status = "Extended but not paid";
+                }
+                // Condition 3: Drop Done
+                elseif ($current_date > $drop_date_current_month) {
+                    $status = "Drop done";
+                }
+                // Condition 4: Expired but not Extended & Drop not Done
+                elseif (
+                    $current_date > $drop_date_current_month &&
+                    empty($next_booking_date)
+                ) {
+                    $status = "Expired but not extended & drop not done";
+                }
+                // Default condition if none of the above match
+                else {
+                    $status = "No matching status found";
+                }
             ?>
+
                 <tr>
                     <td><?= $sno++ ?></td>
                     <td><?= htmlspecialchars($row["trans_id"]) ?></td>
