@@ -1,0 +1,962 @@
+<?php
+// Define server and image paths
+$vehicle_server_path = $_SERVER['DOCUMENT_ROOT'] . '/android_app_ridobiko_owned_store/';
+$vehicle_img_path = '';
+$string = [];
+$order_id = ""; // Ensure this variable is defined and set
+
+// Extract patterns from $order_id and assign values to $string
+if (preg_match_all('!\d+!', $order_id, $str)) {
+    $string[0][0] = $str[0][0];
+}
+if (preg_match_all('!\d+[mM]!', $order_id, $str)) {
+    $string[0][0] = $str[0][0] . "1";
+}
+if (preg_match_all('!\d+[C]!', $order_id, $str)) {
+    $string[0][0] = $str[0][0];
+}
+if (preg_match_all('!\d+[mM]\d[C]!', $order_id, $str)) {
+    $string[0][0] = $str[0][0];
+}
+
+// Set vehicle image path based on the extracted order ID
+$vehicle_img_path = "https://www.bikelele.com/android_app_ridobiko_owned_store/images/{$string[0][0]}/";
+
+// Initialize variables
+$charges = 0;
+$cls_date_drop = "";
+$drop = date('Y-m-d'); // Assuming this is the current date for comparison
+$rent_collected = 0;
+$deposit_payment_mode = "";
+$KM_meter_pickup = ""; // Default value for KM_meter_pickup
+
+// Fetch trip details
+$sql4 = "SELECT * FROM `trip_details_from_ridobiko_vendor` WHERE order_id = '$order_id'";
+$result4 = mysqli_query($con, $sql4);
+
+if ($result4 && mysqli_num_rows($result4) > 0) {
+    $row = mysqli_fetch_array($result4);
+
+    // Get details from $row, handling missing values
+    $actual_drop_date = $row["drop_date"] ?? null;
+    if (!empty($actual_drop_date)) {
+        $actual_drop_date_obj = date('Y-m-d', strtotime($actual_drop_date));
+        $drop_date_obj = date('Y-m-d', strtotime($drop));
+
+        // Determine drop status class based on drop date
+        if (isset($row["charges_confirmed"])) {
+            if ($drop_date_obj == $actual_drop_date_obj) {
+                $cls_date_drop = "<div class='bg-success text-nowrap'>Dropped At: " . date('d-m-Y', strtotime($actual_drop_date)) . "</div>";
+            } elseif ($drop_date_obj > $actual_drop_date_obj) {
+                $cls_date_drop = "<div class='bg-dark text-nowrap'>Dropped At: " . date('d-m-Y', strtotime($actual_drop_date)) . "</div>";
+            } else {
+                $cls_date_drop = "<div class='bg-danger text-nowrap'>Dropped At: " . date('d-m-Y', strtotime($actual_drop_date)) . "</div>";
+            }
+        }
+    }
+
+    // Calculate charges
+    $fuel_apply_charges = $row["fuel_charge_apply"] ?? "0";
+    $km_apply_charges = $row["km_charge_apply"] ?? "0";
+    $maintenance_apply_charges = $row["maintenance_charge_apply"] ?? "0";
+
+    if ($fuel_apply_charges === "1") {
+        $charges += intval($row["petrol_charge"] ?? 0);
+    }
+    if ($km_apply_charges === "1") {
+        $charges += intval($row["extra_km_charge"] ?? 0);
+    }
+    if ($maintenance_apply_charges === "1") {
+        $charges += intval($row["other_charge"] ?? 0);
+    }
+}
+
+// Fetch vehicle images
+$sql5 = "SELECT * FROM `trip_pictures_from_ridobiko_vendor` WHERE order_id = '{$string[0][0]}'";
+$result5 = mysqli_query($con, $sql5);
+
+if ($result5 && mysqli_num_rows($result5) > 0) {
+    $row_images = mysqli_fetch_array($result5);
+
+    // Define image paths
+    $bike_left = $vehicle_img_path . ($row_images["bike_left"] ?? '');
+    $bike_right = $vehicle_img_path . ($row_images["bike_right"] ?? '');
+    $bike_front = $vehicle_img_path . ($row_images["bike_front"] ?? '');
+    $bike_back = $vehicle_img_path . ($row_images["bike_back"] ?? '');
+}
+
+// Default values for bike attributes
+$max_fuel_bars = 0;
+$km_limit = 0;
+$additional_km_cost = 0;
+$rent_per_day = 0;
+$fuel_tank = 0;
+$pickup_status = ""; // Assuming this is determined elsewhere
+
+// Fetch bike details
+$sql = "SELECT * FROM `bikes_database` WHERE vendor_email_id = '{$_SESSION['email']}'";
+$bikeid = ''; // Define the bike ID variable to avoid undefined warnings
+?>
+ 
+<div class="container">
+    <table class="table">
+        <tbody id="dashboard-table">
+            <tr>
+                <th>Change vehicle ID</th>
+                <td>
+                    <select class="mb-3" id="change_vehicle_id" name="change_vehicle_id" <?php echo $pickup_status == "done" ? "disabled" : ""; ?>>
+                        <?php
+                        if ($result = mysqli_query($con, $sql)) {
+                            while ($row = mysqli_fetch_array($result)) {
+                                echo "<option value='{$row['bike_id']}'" . ($bikeid == $row['bike_id'] ? " selected" : "") . ">{$row['bike_name']} | {$row['bike_id']}</option>";
+                            }
+                        }
+                        ?>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th>Rent collected at store</th>
+                <td>
+                    <div class="input-group mb-3">
+                        <input type="text" class="form-control" placeholder="Amount left to pay" name="rent_collected" value="<?php echo $rent_collected; ?>" <?php echo $rent_collected ? "disabled" : ""; ?>>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <th>Mode of rent collection</th>
+                <td>
+                    <select class="form-select form-select-lg mb-3" name="Mode_of_Rent" <?php echo $rent_collected ? "disabled" : ""; ?>>
+                        <option value="">None</option>
+                        <option <?php echo $deposit_payment_mode == "By Cash" ? "selected" : ""; ?>>By Cash</option>
+                        <option <?php echo $deposit_payment_mode == "By UPI" ? "selected" : ""; ?>>By UPI</option>
+                        <option <?php echo $deposit_payment_mode == "By Card" ? "selected" : ""; ?>>By Card</option>
+                        <option <?php echo $deposit_payment_mode == "Direct Bank Transfer" ? "selected" : ""; ?>>Direct Bank Transfer</option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th>Fuel Meter reading</th>
+                <td>
+                    <select class="form-select form-select-lg mb-3" name="fuel_pickup">
+                        <?php for ($i = 0; $i <= $max_fuel_bars; $i++): ?>
+                            <option value="<?php echo $i; ?>" <?php echo $i == intval($KM_meter_pickup) ? "selected" : ""; ?>><?php echo $i; ?></option>
+                        <?php endfor; ?>
+                    </select>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+ 
+
+    <div class="col-md-6">
+      <div class="card">
+        <div class="card-body other">
+          <a href="#" class="btn btn-dark other_btn">
+            <h5>Vehicle pictures</h5>
+          </a>
+          <div class="d-flex">
+            <div class="col-2">
+              <p class="col">Left</p>
+              <div class="image2">
+                <img id="bl" src="<?php echo $bike_left;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_left;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikeleft"   onChange="img_pathUrl(this,'bl');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-2">
+              <p class="col">Back</p>
+              <div class="image2">
+                <img id="bb" src="<?php echo $bike_back;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_back;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikeback"  onChange="img_pathUrl(this,'bb');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-2">
+              <p class="col">Right</p>
+              <div class="image2">
+                <img id="br" src="<?php echo $bike_right;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_right;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikeright"  onChange="img_pathUrl(this,'br');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-2">
+              <p class="col">Front</p>
+              <div class="image2">
+                <img id="bf" src="<?php echo $bike_front;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_front;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikefront"  onChange="img_pathUrl(this,'bf');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-2">
+              <p>Fuel meter</p>
+              <div class="image2">
+                <img id="bfm" src="<?php echo $bike_fuel_meter;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_fuel_meter;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikefulemeter"  onChange="img_pathUrl(this,'bfm');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-2">
+              <p>With customer</p>
+              <div class="image2">
+                <img id="bwc" src="<?php echo $bike_with_customer;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $bike_with_customer;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="bikewithcustomer"  onChange="img_pathUrl(this,'bwc');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+          </div>
+        </div>
+      </div><br><br>
+      
+
+      <div class="card">
+        <div class="card-body other">
+          <a href="#" class="btn btn-dark other_btn">
+            <h5>Helmet pictures</h5>
+          </a>
+          <div class="row" id="hefb1">
+            <div class="col-3 hem1">
+              <label>Helmet 1</label>
+              <p>Top</p>
+              <div class="image3">
+                <img id="hf1" src="<?php echo $helmet_front_1;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_front_1;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemfront1"  onChange="img_pathUrl(this,'hf1');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem1">
+              <label>Helmet 1</label>
+              <p>Bottom</p>
+              <div class="image3">
+                <img id="hb1" src="<?php echo $helmet_back_1;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_back_1;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemback1"  onChange="img_pathUrl(this,'hb1');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem2">
+              <label>Helmet 2</label>
+              <p>Top</p>
+              <div class="image3">
+                <img id="hf2" src="<?php echo $helmet_front_2;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_front_2;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemfront2"  onChange="img_pathUrl(this,'hf2');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem2">
+              <label>Helmet 2</label>
+              <p>Bottom</p>
+              <div class="image3">
+                <img id="hb2" src="<?php echo $helmet_back_2;?>"  
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_front_2;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemback2"  onChange="img_pathUrl(this,'hb2');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+             <div class="col-3 hem3">
+              <label>Helmet 3</label>
+              <p>Top</p>
+              <div class="image3">
+                <img id="hf3" src="<?php echo $helmet_front_3;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_front_3;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemfront3"  onChange="img_pathUrl(this,'hf3');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem3">
+              <label>Helmet 3</label>
+              <p>Bottom</p>
+              <div class="image3">
+                <img id="hb3" src="<?php echo $helmet_back_3;?>"  
+                  class="pointer`" data-toggle="modal" data-target="#helmetSection" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_back_3;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemback3"  onChange="img_pathUrl(this,'hb3');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem4">
+              <label>Helmet 4</label>
+              <p>Top</p>
+              <div class="image3">
+                <img id="hf4" src="<?php echo $helmet_front_4;?>" 
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_front_4;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemfront4"  onChange="img_pathUrl(this,'hf4');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+            <div class="col-3 hem4">
+              <label>Helmet 4</label>
+              <p>Bottom</p>
+              <div class="image3">
+                <img id="hb4" src="<?php echo $helmet_back_4;?>"  
+                  class="pointer"  onclick="callModal(this.src)" />
+              </div>
+              <center>
+                <span class="material-icons-outlined"><a href="<?php echo $helmet_back_4;?>" download><i
+                      class="fas fa-download"></i></a></span>
+                <span class="material-icons-outlined">
+                  <div class="wrapper">
+                    <div class="file-upload">
+                      <input type="file" <?php echo $pickup_status=="done"?"disabled":"";?>    name="hemback4"  onChange="img_pathUrl(this,'hb4');" />
+                      <i class="fa fa-upload"></i>
+                    </div>
+                  </div>
+                </span>
+              </center>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <br>
+        <select class="form-select form-select-lg mb-3"  name="id_collected" <?php echo $pickup_status=="done"?"disabled":"";?>  
+          aria-label=".form-select-lg example">
+          <option <?php echo $id_collected=="Aadhar Card" ?"selected":"";?>>Aadhar Card</option>
+          <option <?php echo $id_collected=="Pan Card" ?"selected":"";?>>Pan Card</option>
+          <option <?php echo $id_collected=="Voter ID" ?"selected":"";?>>Voter ID</option>
+        </select>
+        <div class="input-group">
+          <div class="input-group-prepend">
+            <span class="input-group-text">Purpose</span>
+          </div>
+          <input type="text" name="purpose" class="form-control" <?php echo $pickup_status=="done"?"disabled":"";?>    value="<?php echo $purpose;?>">
+        </div><br>
+        <div class="input-group">
+          <div class="input-group-prepend">
+            <span class="input-group-text">Destination</span>
+          </div>
+          <input type="text" name="destination" class="form-control" <?php echo $pickup_status=="done"?"disabled":"";?>    value="<?php echo $destination;?>">
+        </div><br>
+        <button name="update-pickup" <?php echo $rent_collected=="$amount"?"disabled":"";?> class="btn btn-dark btn-lg btn-block">Submit</button>
+      </div>
+    </div>
+  </div>    
+</div>
+</form>
+
+
+<script>
+$('#act_drop').html(`<?php echo $cls_date_drop;?>`);
+$("#yesCheckbox").on('click',function(){
+  if($('#noCheckbox')[0].checked)
+  {
+    $('#noCheckbox').prop("checked",false);
+  }
+  yesShow(this);
+  $('#mode_Deposit').prop("disabled",false);
+});
+$("#noCheckbox").on('click',function(){
+  if($('#yesCheckbox')[0].checked)
+  {
+    $('#yesCheckbox').prop("checked",false);
+    yesShow($("#yesCheckbox"));
+  }
+  $('#mode_Deposit').prop("disabled",true);
+});
+
+</script>
+<script>
+  $(document).ready(function(){
+  $(".hem2, .hem3, .hem4").hide();
+  hem2="<?php echo $helmet_front_2;?>";
+  hem3="<?php echo $helmet_front_3;?>";
+  hem4="<?php echo $helmet_front_4;?>";
+  if(hem2.substring(hem2.lastIndexOf('/')+1) !== "")
+  {
+    $(".hem2").show();  
+  }
+  if(hem3.substring(hem3.lastIndexOf('/')+1) !== "")
+  {
+    $(".hem3").show();
+  }
+  if(hem4.substring(hem4.lastIndexOf('/')+1) !== "")
+  {
+    $(".hem4").show();
+  }
+  $("#quant1").change(function(){
+  var x = $(this).val();
+  if(x==0){
+   $(".hem1,.hem2, .hem3, .hem4").hide();
+  }
+  if(x==1){
+  $(".hem1").show();
+   $(".hem2, .hem3, .hem4").hide();
+  }
+  else if(x==2){
+    $(".hem1, .hem2").show();
+     $(".hem3, .hem4").hide();
+    }
+    else if(x==3){
+      $(".hem1, .hem2, .hem3").show();
+       $(".hem4, .hem4").hide();
+      }
+    else if(x==4){
+      $(".hem1,.hem2,.hem3,.hem4").show();
+      }
+  });
+  });
+//     $('#quant1').change(function(){
+//       var x = $(this).val();
+//       alert(x);
+//       $.ajax({
+//         url:'../vendor/ajax/helmetcount.php',
+//         type:'GET',
+//         data:{"quant1":x},
+//         success:function(data){
+//           console.log(data);
+//           $('#hefb1').html(data);
+//         }
+// });
+//     });
+//   });
+  </script>
+<?php 
+if(isset($_POST['update-pickup']) && count($_POST)==3)
+{
+  
+  $rcbv=$_POST["rent_collected"];
+  $rpm=$_POST["Mode_of_Rent"];
+  if(intval($rcbv)<intval($left_amt))
+  {
+    echo "<script>
+        $(document).ready(function(){
+        swal('','Collect all due amount','error')
+        });</script>";
+  }
+  else{
+  $sql="update trip_details_from_ridobiko_vendor set rent_collected_by_vendor=rent_collected_by_vendor+$rcbv,	
+  rent_payment_mode='$rpm' where order_id='$order_id'";
+  $sql1="update trip set amount_left=0,amount_paid=rent,booking='Payment Done' where trans_id='$order_id'";
+  $res=mysqli_query($con,$sql) or die("Query not Successful $sql");
+  $res1=mysqli_query($con,$sql1) or die("Query not Successful $sql1");
+  if($res & $res1)
+  {
+    echo "<script>
+        $(document).ready(function(){
+        swal('','Rent Update Successful','success')
+        });</script>";
+  }
+  else{
+    echo "<script>
+        $(document).ready(function(){
+        swal('','Rent Update Failed','error')
+        });</script>";
+  }
+
+  }
+}
+else if(isset($_POST['update-pickup']))
+{
+  $root = $_SERVER['DOCUMENT_ROOT'];
+  $target_dir=$vehicle_server_path."images/$order_id/";
+  $db_dir="";
+  if (!is_dir($target_dir)) {
+    mkdir($target_dir, 0777, true);
+  }
+  if(!empty($_FILES['bikeleft']['name']))
+  {
+    $filename1=basename($_FILES['bikeleft']['name']);
+    $filename1=str_replace(' ','', $filename1);
+    $ext = pathinfo($filename1, PATHINFO_EXTENSION);
+    $filename1=$db_dir.$order_id.'_bikeLeft.'.$ext;
+    $tmpname1=$_FILES['bikeleft']['tmp_name'];
+    $targetfile1=$target_dir.basename($filename1);
+    move_uploaded_file($tmpname1, $targetfile1);
+  }
+  else{
+    $filename1="";
+  }
+  if(!empty($_FILES['bikeback']['name']))
+  {
+    $filename2=basename($_FILES['bikeback']['name']);
+    $filename2=str_replace(' ','', $filename2);
+    $ext = pathinfo($filename2, PATHINFO_EXTENSION);
+    $filename2=$db_dir.$order_id.'_bikeBack.'.$ext;
+    $tmpname2=$_FILES['bikeback']['tmp_name'];
+    $targetfile2=$target_dir.basename($filename2);
+    move_uploaded_file($tmpname2, $targetfile2);
+  }
+  else{
+    $filename2="";
+  }
+  if(!empty($_FILES['bikeright']['name']))
+  {
+    $filename3=basename($_FILES['bikeright']['name']);
+    $filename3=str_replace(' ','', $filename3);
+    $ext = pathinfo($filename3, PATHINFO_EXTENSION);
+    $filename3=$db_dir.$order_id.'_bikeRight.'.$ext;
+    $tmpname3=$_FILES['bikeright']['tmp_name'];
+    $targetfile3=$target_dir.basename($filename3);
+    move_uploaded_file($tmpname3, $targetfile3);
+  }
+  else{
+    $filename3="";
+  }
+  if(!empty($_FILES['bikefront']['name']))
+  {
+    $filename4=basename($_FILES['bikefront']['name']);
+    $filename4=str_replace(' ','', $filename4);
+    $ext = pathinfo($filename4, PATHINFO_EXTENSION);
+    $filename4=$db_dir.$order_id.'_bikeFront.'.$ext;
+    $tmpname4=$_FILES['bikefront']['tmp_name'];
+    $targetfile4=$target_dir.basename($filename4);
+    move_uploaded_file($tmpname4, $targetfile4);
+  } 
+  else{
+    $filename4="";
+  }
+  
+  if(!empty($_FILES['bikefulemeter']['name']))
+  {
+    $filename5=basename($_FILES['bikefulemeter']['name']);
+    $filename5=str_replace(' ','', $filename5);
+    $ext = pathinfo($filename5, PATHINFO_EXTENSION);
+    $filename5=$db_dir.$order_id.'_bikeFuelMeter.'.$ext;
+    $tmpname5=$_FILES['bikefulemeter']['tmp_name'];
+    $targetfile5=$target_dir.basename($filename5);
+    move_uploaded_file($tmpname5, $targetfile5);
+  }
+  else{
+    $filename5="";
+  }
+  if(!empty($_FILES['bikewithcustomer']['name']))
+  { 
+    $filename6=basename($_FILES['bikewithcustomer']['name']);
+    $filename6=str_replace(' ','', $filename6);
+    $ext = pathinfo($filename6, PATHINFO_EXTENSION);
+    $filename6=$db_dir.$order_id.'_bikeWithCustomer.'.$ext;
+    $tmpname6=$_FILES['bikewithcustomer']['tmp_name'];
+    $targetfile6=$target_dir.basename($filename6);
+    move_uploaded_file($tmpname6, $targetfile6);
+  }
+  else{
+    $filename6="";
+  }
+  if(!empty($_FILES['hemfront1']['name']))
+  {
+    $filename7=basename($_FILES['hemfront1']['name']);
+    $filename7=str_replace(' ','', $filename7);
+    $ext = pathinfo($filename7, PATHINFO_EXTENSION);
+    $filename7=$db_dir.$order_id.'_HelmetFront1.'.$ext;
+    $tmpname7=$_FILES['hemfront1']['tmp_name'];
+    $targetfile7=$target_dir.basename($filename7);
+    move_uploaded_file($tmpname7, $targetfile7);
+  }
+  else{
+    $filename7="";
+  }
+  if(!empty($_FILES['hemback1']['name']))
+  {
+    $filename8=basename($_FILES['hemback1']['name']);
+    $filename8=str_replace(' ','', $filename8);
+    $ext = pathinfo($filename8, PATHINFO_EXTENSION);
+    $filename8=$db_dir.$order_id.'_HelmetBack1.'.$ext;
+    $tmpname8=$_FILES['hemback1']['tmp_name'];
+    $targetfile8=$target_dir.basename($filename8);
+    move_uploaded_file($tmpname8, $targetfile8);
+  }
+  else{
+    $filename8="";
+  }
+  if(!empty($_FILES['hemfront2']['name']))
+  {
+    $filename9=basename($_FILES['hemfront2']['name']);
+    $filename9=str_replace(' ','', $filename9);
+    $ext = pathinfo($filename9, PATHINFO_EXTENSION);
+    $filename9=$db_dir.$order_id.'_HelmetFront2.'.$ext;
+    $tmpname9=$_FILES['hemfront2']['tmp_name'];
+    $targetfile9=$target_dir.basename($filename9);
+    move_uploaded_file($tmpname9, $targetfile9);
+  }
+  else{
+    $filename9="";
+  }
+
+  if(!empty($_FILES['hemback2']['name'])) 
+  {
+    $filename10=basename($_FILES['hemback2']['name']);
+    $filename10=str_replace(' ','', $filename10);
+    $ext = pathinfo($filename10, PATHINFO_EXTENSION);
+    $filename10=$db_dir.$order_id.'_HelmetBack2.'.$ext;
+    $tmpname10=$_FILES['hemback2']['tmp_name'];
+    $targetfile10=$target_dir.basename($filename10);
+    move_uploaded_file($tmpname10, $targetfile10);
+  }
+  else{
+    $filename10="";
+  }
+  if(!empty($_FILES['hemfront3']['name']))
+  {
+    $filename11=basename($_FILES['hemfront3']['name']);
+    $filename11=str_replace(' ','', $filename11);
+    $filename11=$db_dir.$order_id.'_HelmetFront3.'.$ext;
+    $ext = pathinfo($filename11, PATHINFO_EXTENSION);
+    $tmpname11=$_FILES['hemfront3']['tmp_name'];
+    $targetfile11=$target_dir.basename($filename11);
+    move_uploaded_file($tmpname11, $targetfile11);
+  }
+  else{
+    $filename11="";
+  }
+
+  if(!empty($_FILES['hemback3']['name'])) 
+  {
+    $filename12=basename($_FILES['hemback3']['name']);
+    $filename12=str_replace(' ','', $filename12);
+    $ext = pathinfo($filename12, PATHINFO_EXTENSION);
+    $filename12=$db_dir.$order_id.'_HelmetBack3.'.$ext;
+    $tmpname12=$_FILES['hemback3']['tmp_name'];
+    $targetfile12=$target_dir.basename($filename12);
+    move_uploaded_file($tmpname12, $targetfile12);
+  }
+  else{
+    $filename12="";
+  }
+
+  if(!empty($_FILES['hemfront4']['name']))
+  {
+    $filename13=basename($_FILES['hemfront4']['name']);
+    $filename13=str_replace(' ','', $filename13);
+    $ext = pathinfo($filename13, PATHINFO_EXTENSION);
+    $filename13=$db_dir.$order_id.'_HelmetFront4.'.$ext;
+    $tmpname13=$_FILES['hemfront4']['tmp_name'];
+    $targetfile13=$target_dir.basename($filename13);
+    move_uploaded_file($tmpname13, $targetfile13);
+  }
+  else{
+    $filename13="";
+  }
+
+  if(!empty($_FILES['hemback4']['name'])) 
+  {
+    $filename14=basename($_FILES['hemback4']['name']);
+    $filename14=str_replace(' ','', $filename14);
+    $ext = pathinfo($filename14, PATHINFO_EXTENSION);
+    $filename14=$db_dir.$order_id.'_HelmetBack4.'.$ext;
+    $tmpname14=$_FILES['hemback4']['tmp_name'];
+    $targetfile14=$target_dir.basename($filename14);
+    move_uploaded_file($tmpname14, $targetfile14);
+  }
+  else{
+    $filename14="";
+  }
+  
+  if($_POST["change_vehicle_id"]==$bikeid)
+  {
+    $change_vid=0;
+  }
+  else
+  {
+    $change_vid=1;
+  }
+  $cvh=$_POST["change_vehicle_id"];
+  
+  if(isset($_POST["rent_collected"]) && isset($_POST["Mode_of_Rent"]))
+  {
+  $rcbv=$_POST["rent_collected"];
+  $rpm=$_POST["Mode_of_Rent"];
+  }
+  else
+  {
+  $rcbv="0";
+  $rpm="";
+  }
+  if(isset($_POST["deposit"]) && isset($_POST["Mode_of_Deposit"]))
+  {
+  $deposit=$_POST["deposit"];
+  $dpm=$_POST["Mode_of_Deposit"];
+   $wallet_amount=intval($wallet_amount)+intval($deposit);
+   $sql="INSERT INTO `wallet_details`(`mobile`, `amount`, `refundable_amount`) VALUES ('$mobile','$wallet_amount','$wallet_amount') 
+   ON DUPLICATE KEY UPDATE amount=amount+$wallet_amount,refundable_amount=refundable_amount+$wallet_amount";
+   mysqli_query($con,$sql) or die("Some Error Occured");
+  }
+  else
+  {
+  $deposit="";
+  $dpm="";
+  }
+
+  if(isset($_POST["No_of_helmets"]))
+    $noh=$_POST["No_of_helmets"];
+  else
+    $noh="";
+
+  if(isset($_POST["fuel_pickup"]))
+    $fmr=$_POST["fuel_pickup"];
+  else
+    $fmr="";
+
+  if(isset($_POST["KM_meter_pickup"]))
+    $kmr=$_POST["KM_meter_pickup"];
+  else
+    $kmr="";
+
+  if(isset($_POST["purpose"]))
+    $purpose=$_POST["purpose"];
+  else
+    $purpose="";
+  if(isset($_POST["destination"]))
+    $destination=$_POST["destination"];
+  else
+    $destination="";
+  if(isset($_POST["id_collected"]))
+    $idc=$_POST["id_collected"];
+  else
+    $idc="";
+
+    if(intval($rcbv)<intval($left_amt))
+    {
+      echo "<script>
+          $(document).ready(function(){
+          swal('','Collect all due amount','error')
+          });</script>";
+    }
+    else{  
+  $curent=date('Y-m-d H:i');
+//   $dd=date('Y-m-d H:i',$drop);
+  $sql="INSERT INTO `trip_details_from_ridobiko_vendor`
+      (`order_id`, `pickup_date`, `drop_date`, `booking_date`, `booking_status`, 
+      `city`, `rent_collected_by_vendor`, `rent_payment_mode`, `deposit_collected_by_vendor`, 
+      `deposit_payment_mode`, `no_of_helmets`, `KM_meter_pickup`, `fuel_pickup`, 
+      `destination`, `purpose`, `id_collected`) VALUES 
+      ('$order_id','{$curent}','','$bookedon','$status','{$_SESSION["city"]}',
+      '$rcbv','$rpm','$deposit','$dpm','$noh','$kmr',
+      '$fmr','$destination','$purpose','$idc')";
+      $res=mysqli_query($con,$sql) or die("Query not successful details $sql");
+      
+      $sql2="INSERT INTO `trip_pictures_from_ridobiko_vendor`
+      (`order_id`, `bike_id`, `customer_aadhar_front`,`customer_aadhar_back`, `customer_driving`, 
+      `bike_left`, `bike_right`, `bike_front`, `bike_back`, `bike_with_customer`,
+      `bike_fuel_meter`, `helmet_front_1`, `helmet_back_1`, `helmet_front_2`, 
+      `helmet_back_2`,`helmet_front_3`, `helmet_back_3`, `helmet_front_4`, 
+      `helmet_back_4`) VALUES ('$order_id','$bid','$front','$back','$dl_img','$filename1','$filename3','$filename4','$filename2'
+      ,'$filename6','$filename5','$filename7','$filename8','$filename9','$filename10','$filename11','$filename12','$filename13','$filename14')";
+      $res2=mysqli_query($con,$sql2) or die("Query not successful picture");
+
+      $sql11="update trip set amount_left=0 where trans_id='$order_id'";
+      $res11=mysqli_query($con,$sql11) or die("Query not Successful $sql11");
+
+      if($change_vid==1)
+      {
+        $d1=date('Y-m-d', strtotime($pickup));
+        $d2=date('Y-m-d', strtotime($drop));
+        $sql3="update trip set bikes_id='$cvh' where trans_id='$order_id'";
+        // echo $sql3;
+        if(preg_match_all('!\d+[mM]!',$order_id, $str))
+          { 
+            preg_match_all('!\d+!',$order_id, $temp);
+            $sql9="select count(*) as num from trip where trans_id like '{$str[0][0]}%'";
+            $res9=mysqli_query($con,$sql9);
+            $num=mysqli_fetch_assoc($res9)["num"];
+            if($num>1)
+            {
+              for($i=$temp[0][1]+1;$i<=$num;$i++)
+              {
+              $oid=$str[0][0].($i);
+              $sql10="update trip set bikes_id='$cvh' where trans_id='$oid'";
+              $res10=mysqli_query($con,$sql10);
+              }
+            }
+          }
+        $sql4="update bikes_database set `pickup`='$d1',`drop`='$d2' where bike_id='$cvh'";
+        // echo $sql4;
+        $sql5="update bikes_database set pickup='0000-00-00',`drop`='0000-00-00' where bike_id='$bikeid'";
+        // echo $sql5;
+        $sql_7="UPDATE trip_pictures_from_ridobiko_vendor set bike_id='$cvh' where order_id='$order_id'";
+        mysqli_query($con,$sql3) or die("Query not successful 1");
+        mysqli_query($con,$sql4) or die("Query not successful 11");
+        mysqli_query($con,$sql5) or die("Query not successful 112");
+        mysqli_query($con,$sql_7) or die("Query not successful 112");
+        
+      }
+      
+      if(preg_match_all('!\d+[mM]!',$order_id, $str))
+    { 
+      preg_match_all('!\d+!',$order_id, $temp);
+
+      $sql6="select count(*) as num from trip where trans_id like '{$str[0][0]}%'";
+      $res6=mysqli_query($con,$sql6);
+      $num=mysqli_fetch_assoc($res6)["num"];
+      if($num>1)
+      {
+        for($i=$temp[0][1]+1;$i<=$num;$i++)
+        {
+        // echo '_______________________________________'.($i).'_______________________________________';
+        $oid=$str[0][0].($i);
+        $sql7="select * from trip where trans_id='$oid'";
+        $res7=mysqli_query($con,$sql7);
+        $row7=mysqli_fetch_assoc($res7);
+        // print_r($row7);
+
+          // echo "<br/><br/>";
+        $sql8="INSERT INTO `trip_details_from_ridobiko_vendor`
+        (`order_id`, `pickup_date`, `drop_date`, `booking_date`, `booking_status`, 
+        `city`, `rent_collected_by_vendor`, `rent_payment_mode`, `deposit_collected_by_vendor`, 
+        `deposit_payment_mode`, `no_of_helmets`, `KM_meter_pickup`, `fuel_pickup`, 
+        `destination`, `purpose`, `id_collected`) VALUES 
+        ('$oid','{$row7["pickup_date"]}','{$row7["drop_date"]}','{$row7["bookedon"]}',
+        '{$row7["admin_status"]}','{$_SESSION["city"]}',
+        '0','','$deposit','$dpm','$noh','$kmr',
+        '$fmr','$destination','$purpose','$idc')";
+        // echo $sql;
+        $res8=mysqli_query($con,$sql8) or die("Query not successful details $sql8");
+        }
+      }
+    }
+    include "ajax/email/send_pickup_email.php";
+      header("location:live_dashboard.php?bid={$_GET['bid']}&transid={$_GET['transid']}");
+      if($res && $res2){
+        echo "<script>
+        $(document).ready(function(){
+        swal('','Pickup Update Sucessful','success')
+        });</script>";
+      }
+      else
+      {
+      echo "<script>
+      $(document).ready(function(){
+      swal('','Pickup Update Failed','error')
+      });</script>";
+      }
+    }
+      
+}
+?>
